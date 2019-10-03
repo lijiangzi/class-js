@@ -1,186 +1,248 @@
+// 初始化地址的hash值为了触发hashchange事件
+location.hash = ''
+// 获取新增学生的提交按钮
+var addSubmitBtn = document.getElementById('add-submit');
 
-var pageSize = 10;
-var nowPage = 1;
-var tableData = [];
-var searchWord = "";
+//  获取新增学生的表单元素
+var addFormData = document.getElementById('add-student-form');
+// 获取左侧导航元素
+var menuDL = document.getElementById('menu-list');
+// 存储所有学生信息数据
+var allStudentData = [];
+
+// 切换导航
+function changeMenu(dom) {
+    // 初始化导航样式
+    initActive();
+    // 为当前选中导航添加样式
+    dom.classList.add('active');
+}
+// 获取学生表单数据
+function getStudentData(formData) {
+    var name = formData.name.value;
+    var sex = formData.sex.value;
+    var sNo = formData.sNo.value;
+    var email = formData.email.value;
+    var birth = formData.birth.value;
+    var phone = formData.phone.value;
+    var address = formData.address.value;
+    var student = {
+        name: name,
+        sex: sex,
+        sNo: sNo,
+        email: email,
+        birth: birth,
+        phone: phone,
+        address: address,
+    }
+    return student;
+}
+// 绑定事件
 function bindEvent() {
-    $('#menu').on('click', 'dd', function (e) {
-        $('#menu > dd.active').removeClass('active');
-        $(this).addClass('active');
-        var id = $(this).attr('data-id');
-        // console.log($(this).data('id'))
-        if (id == 'student-list') {
-            getTableData(nowPage);
-            $('#add-student-form')[0].reset();
+     // 改变hash值时修改右侧展示内容
+     window.onhashchange = function (e) {
+        // 获取到右侧内容区展示的内容元素
+        var hash = location.hash.slice(1);
+        var content = document.getElementsByClassName(hash + '-content')[0];
+        // 初始化右侧区域的内容样式
+        initActiveContent();
+        if(content) {
+            content.classList.add('active-content');
         }
-        $('.content').fadeOut();
-        $('#' + id).fadeIn();
-    }); 
-    $('#edit-submit').click(function (e) {
+      
+    }
+    // 新增学生信息提交按钮绑定事件
+    addSubmitBtn.onclick = function (e) {
+        // 阻止默认表单提交事件
         e.preventDefault();
-        var data = $('#edit-student-form').serialize()
-        transferData('/api/student/updateStudent', data, function() {
-            alert('修改成功');
-            $('#modal').slideUp();
-            $('#menu > dd[data-id=student-list]').trigger('click');
-        });
-    });
-    $('#add-submit').click(function(e) {
-        e.preventDefault();
-        var data = $('#add-student-form').serialize();
-        transferData('/api/student/addStudent', data, function() {
-            alert('提交成功');
-            $('#add-student-form')[0].reset();
-            $('#menu > dd[data-id=student-list]').trigger('click');
-        });
-    });
-    // 搜索过滤功能
-    $('#search-submit').click(function(e) {
-        var value = $('#search-word').val();
-        // 如果搜索框里面没有内容 则调用findByPage接口
-        nowPage = 1;
-        if (!value) {
-            getTableData(nowPage);
+        e.stopPropagation();
+        // 获取到学生数据
+        var data = getStudentData(addFormData);
+        // 数据拼接
+        var param = Object.assign({
+            appkey: "haizeiwang_1554459899292"
+        }, data);
+        // 传给后端存入数据库
+        var result = saveData('https://api.duyiedu.com/api/student/addStudent', param);
+        // 成功存储 跳转到列表页 重置表单数据
+        if (result.status == 'success') {
+            alert('添加成功');
+            var studentMenu = document.getElementsByClassName('student-list')[0];
+            getStudentList();
+            studentMenu.click();
+            addFormData.reset();
+        } else {
+            alert(result.msg);
+        }
+    }
+    // 切换导航
+    menuDL.onclick = function (e) {
+        // 通过事件冒泡查看当前点击的元素是否为dd  若是切换导航 并且改变hash值
+        var tag = e.target.tagName.toLowerCase();
+        if (tag !== 'dd') {
             return false;
         }
-        searchWord = value;
-        // 有内容则 让其获取searchStudent接口数据数据 
-        getSearchTableData();
-    })
+        changeMenu(e.target);
+       
+        var hash = e.target.getAttribute('data-hash');
+        console.log(hash)
+        location.hash = hash;
+    }
+   
 
 }
-function bindTableEvent() {
-    $('.edit').click(function (e) {
-        var index = $(this).data('index');
-        $('#modal').slideDown();
-        initEditForm(tableData[index]);
-    });
-    $('.modal-content').click(function(e) {
-        e.stopPropagation();
-    })
-    $('#modal').click(function(e) {
-        $('#modal').slideUp();
-    });
-
-    $('.del').click(function(e) {
-        var index = $(this).data('index');
-        var isDel = window.confirm('确认删除？');
-        var sNo = tableData[index].sNo;
-        if (isDel) {
-            transferData('/api/student/delBySno', {
-                sNo: sNo
-            }, function (req) {
-                alert('删除成功');
-                $('#menu > dd[data-id=student-list]').trigger('click');
-            });
-        }
-    })
-}
-// 获取表格数据
-function getTableData(page) {
-    // 获取搜索前的表格数据
-    transferData('/api/student/findByPage',{
-        page: page,
-        size: pageSize
-    }, function(req) {
-        // 总页数
-        allPage = Math.ceil(req.data.cont / pageSize);
-        // 添加翻页
-        $('#turn-page').turnPage({
-            allPage: allPage,
-            curPage: page,
-            // 改变页码时触发函数  重新获取搜索后的表格数据
-            changePage: function (page) {
-                nowPage = page;
-                getTableData(page);
-            }
-        });
-        // 渲染数据
-        renderTable(req.data.findByPage);
-    });
-}
-
-function getSearchTableData() {
-    // 获取搜索后的表格数据
-    transferData("/api/student/searchStudent", {
-        sex: -1,
-        search: searchWord,
-        page: nowPage,
-        size: pageSize,
-    }, function (req) {
-        // 总页数
-        var allPage = Math.ceil(req.data.cont / pageSize);
-        // 插入翻页插件  把总页数和当前页传过去
-        $('#turn-page').turnPage({
-            curPage: nowPage,
-            allPage: allPage,
-            // 切换页码时触发函数  要重新获取数据 并且当前页码保存
-            changePage: function (page) {
-                nowPage = page;
-                getSearchTableData();
-            }
-        });
-        // 渲染表格数据
-        renderTable(req.data.searchList);
-    });
-}
-// 初始化编辑的表单  （回填数据）
-function initEditForm(data) {
-    // 获取到编辑的form元素
-    var editForm = $('#edit-student-form')[0];
-    for (var prop in data) {
-        // 判断 form表单里面是否存在name=prop的input标签 若有 回填数据
-        if (editForm[prop]) {
-            editForm[prop].value = data[prop];
-        }
+// 初始化导航样式
+function initActive() {
+    var active = document.getElementsByClassName('active');
+    for (var i = 0; i < active.length; i++) {
+        active[i].classList.remove('active');
     }
 }
-function init () {
-    bindEvent();
-    $('#menu > dd').eq(0).trigger('click');
+// 初识化内容区样式
+function initActiveContent() {
+    var active = document.getElementsByClassName('active-content');
+    for (var i = 0; i < active.length; i++) {
+        active[i].classList.remove('active-content');
+    }
 }
-init();
-function renderTable(data) {
-    tableData = data;
-    var str = '';
-    data.forEach(function (item, index) {
-        str += '<tr>\
-            <td>' + item.sNo + '</td>\
-            <td> ' + item.name + ' </td>\
-            <td>' + (item.sex ? '女' : '男') + '</td>\
-            <td> ' + item.email + '</td>\
-            <td>' + ( new Date().getFullYear() - item.birth) +'</td>\
-            <td> ' + item.phone + '</td>\
-            <td> ' + item.address + '</td>\
-            <td>\
-                <button class="btn edit" data-index=' + index + '>编辑</button>\
-                <button class="btn del" data-index=' + index + '>删除</button>\
-            </td>\
-        </tr>';
-    });
-    $('#student-body').html(str);
-    bindTableEvent();
-}
-// 不一样的作为参数传递  相同的代码封装到函数里面
-function transferData(api, data, callback) {
-    if ($.type(data) == 'string') {
-        data += "&appkey=dongmeiqi_1547441744650";
+// 向后端存储数据
+function saveData(url, param) {
+    var result = null;
+    var xhr = null;
+    if (window.XMLHttpRequest) {
+        xhr = new XMLHttpRequest();
     } else {
-        data = $.extend(data, {
-            appkey: 'dongmeiqi_1547441744650'
-        });
+        xhr = new ActiveXObject('Microsoft.XMLHTTP');
     }
-    $.ajax({
-        type: 'get',
-        url: 'http://api.duyiedu.com' + api,
-        data: data,
-        dataType: 'json',
-        success: function (req) {
-            if (req.status == 'success') {
-                callback(req);
-            } else {
-                alert(req.msg);
+    if (typeof param == 'string') {
+        xhr.open('GET', url + '?' + param, false);
+    } else if (typeof param == 'object'){
+        var str = "";
+        for (var prop in param) {
+            str += prop + '=' + param[prop] + '&';
+        }
+        xhr.open('GET', url + '?' + str, false);
+    } else {
+        xhr.open('GET', url + '?' + param.toString(), false);
+    }
+    xhr.onreadystatechange = function () {
+        if (xhr.readyState == 4) {
+            if (xhr.status == 200) {
+                result = JSON.parse(xhr.responseText);
             }
         }
-    });
+    }
+    xhr.send();
+    return result;
+}
+// 获取学生列表数据
+function getStudentList() {
+    var result = saveData("https://api.duyiedu.com/api/student/findAll", "appkey=haizeiwang_1554459899292");
+    if (result.status == 'success') {
+        allStudentData = result.data;
+        renderDom(allStudentData);
+      
+    } else {
+        alert(result.msg);
+    }
+}
+// 编辑按钮  删除按钮绑定事件
+function bindBtnEvent () {
+    // 编辑按钮
+    var editBtn = document.getElementsByClassName('edit');
+    // 编辑弹窗
+    var modal = document.getElementsByClassName('modal')[0];
+    // 编辑内容区
+    var modalContent = document.getElementsByClassName('modal-content')[0];
+    // 弹窗中的提交按钮
+    var submitBtn = document.getElementById('edit-submit');
+    // 删除按钮
+    var delBtn = document.getElementsByClassName('del');
+    // 编辑删除事件
+    for (var i = 0; i < editBtn.length; i++) {
+        editBtn[i].onclick = function (e) {
+            modal.classList.add('active');
+            var index = this.getAttribute('data-index');
+            renderModalData(allStudentData[index]);
+        }
+        delBtn[i].onclick = function(e) {
+            var isDel = window.confirm('确认删除？');
+            var index = this.getAttribute('data-index');
+            if (isDel) {
+                var result = saveData("https://api.duyiedu.com/api/student/delBySno", {
+                    appkey: "haizeiwang_1554459899292",
+                    sNo: allStudentData[index].sNo,
+                });
+                if (result.status == 'success') {
+                    getStudentList();
+                    alert('删除成功');
+                }
+            }
+        }
+    }
+    // 点击弹窗内部不会使弹窗消失
+    modalContent.onclick = function (e) {
+         e.stopPropagation();
+    }
+    // 点击遮罩层弹窗消失
+    modal.onclick = function (e) {
+        modal.classList.remove('active');
+    }
+    // 编辑按钮点击事件
+    submitBtn.onclick = function (e) {
+        e.preventDefault();
+        var form = document.getElementById('edit-student-form');
+        var data = getStudentData(form);
+        var param = Object.assign({
+            appkey: "haizeiwang_1554459899292"
+        }, data);
+         // 传给后端存入数据库
+         var result = saveData('https://api.duyiedu.com/api/student/updateStudent', param);
+         // 成功存储 跳转到列表页
+         if (result.status == 'success') {
+             alert('修改成功');
+             modal.classList.remove('active');
+             getStudentList()
+
+         } else {
+             alert(result.msg);
+         }
+    }
+}
+// 渲染表格数据
+function renderDom(studentData) {
+    var str = "";
+    for (var i = 0; i < studentData.length; i++) {
+        str += ' <tr>\
+        <td>' + studentData[i].sNo +'</td>\
+        <td>' + studentData[i].name +'</td>\
+        <td>'+ (studentData[i].sex ? '女' : '男') +'</td>\
+        <td>'+ studentData[i].email +'</td>\
+        <td>'+ (new Date().getFullYear() - studentData[i].birth) +'</td>\
+        <td>' + studentData[i].phone +'</td>\
+        <td>' + studentData[i].address +'</td>\
+        <td>\
+            <button class="success edit" data-index=' + i +'>编辑</button>\
+            <button class="del" data-index=' + i +'>删除</button>\
+        </td>\
+    </tr>'
+    }
+    var tbody = document.getElementById('student-list-body');
+    tbody.innerHTML = str;
+    bindBtnEvent();
+}
+// 
+bindEvent();
+var studentMenu = document.getElementsByClassName('student-list')[0];
+studentMenu.click();
+if (location.hash == '#student-list') {
+    getStudentList();
+}
+// 渲染编辑信息弹窗数据
+function renderModalData(studentData) {
+    var form = document.getElementById('edit-student-form');
+    
+    for (var prop in studentData) {
+        form[prop] ? form[prop].value = studentData[prop] : "";
+    }
 }
